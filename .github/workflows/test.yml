@@ -1,0 +1,39 @@
+name: test
+
+on:
+  push:
+    branches: ["**"]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # ./... includes cmd/mdnote-gui (Wails, cgo), which needs GTK4 + WebKitGTK 6.0 + X11 headers.
+      - name: Install GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: Static server build (no cgo, no Wails)
+        run: |
+          CGO_ENABLED=0 go build -o mdnote ./cmd/mdnote
+          if go list -deps ./cmd/mdnote | grep wails; then
+            echo "cmd/mdnote must not depend on Wails" >&2
+            exit 1
+          fi

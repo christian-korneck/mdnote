@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>mdnote</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/chroma.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Left Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <span class="brand-icon">&#9998;</span>
+          <span class="brand-title">mdnote</span>
+        </div>
+        <div class="sidebar-actions">
+          <button id="theme-btn" type="button" class="btn btn-sm btn-icon theme-toggle" data-pref="system" title="Theme: System" aria-label="Theme: System">
+            <svg class="theme-icon icon-system" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="12" rx="2"></rect>
+              <path d="M8 20h8M12 16v4"></path>
+            </svg>
+            <svg class="theme-icon icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4"></circle>
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+            </svg>
+            <svg class="theme-icon icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          </button>
+          <button id="refresh-btn" type="button" class="btn btn-sm" title="Refresh from filesystem">&#8635; Refresh</button>
+          <button id="new-note-btn" type="button" class="btn btn-primary" title="Create New Note">+ New</button>
+        </div>
+      </div>
+
+      <!-- Search Bar + Full-text / Metadata Toggle -->
+      <div class="search-section">
+        <div class="search-row">
+          <input
+            type="search"
+            id="search-input"
+            class="search-input"
+            placeholder="Search notes (or /regex/)..."
+            autocomplete="off"
+          >
+          <button
+            type="button"
+            id="search-mode-btn"
+            class="mode-toggle"
+            data-mode="fulltext"
+            title="Toggle between grep-style Full-Text search and Title/Metadata-only search"
+          >
+            Full-text
+          </button>
+        </div>
+
+        <div class="filter-row">
+          <div class="folder-picker" id="folder-picker">
+            <input
+              type="text"
+              id="folder-filter-input"
+              class="folder-filter-input"
+              placeholder="All folders (type to filter)..."
+              autocomplete="off"
+              title="Search and filter by folder"
+            >
+            <button type="button" id="clear-folder-btn" class="folder-clear-btn hidden" title="Clear folder filter">&times;</button>
+            <div class="folder-dropdown hidden" id="folder-dropdown"></div>
+          </div>
+          <button type="button" id="new-folder-btn" class="btn btn-sm" title="Create new folder">+ Folder</button>
+          <select id="sort-select" class="filter-select sort-select" title="Sort notes">
+            <option value="updated_desc">Updated (new)</option>
+            <option value="updated_asc">Updated (old)</option>
+            <option value="title_asc">Title A–Z</option>
+            <option value="path_asc">Path A–Z</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Tags Bar -->
+      <div class="tags-section" id="tags-section">
+        <div class="tags-header">
+          <span class="tags-label" id="tags-label">Tags</span>
+          <input
+            type="search"
+            id="tag-filter-input"
+            class="tag-filter-input"
+            placeholder="Filter #tags..."
+            autocomplete="off"
+          >
+          <button type="button" id="clear-tag-btn" class="link-btn hidden">Clear</button>
+        </div>
+        <div class="tags-list" id="tags-list"></div>
+      </div>
+
+      <!-- List Status Bar -->
+      <div class="list-meta" id="list-meta">
+        <span id="note-count">0 notes</span>
+        <span id="search-timing"></span>
+      </div>
+
+      <!-- Paginated / Virtual Scroll Note List -->
+      <div class="note-list" id="note-list"></div>
+    </aside>
+
+    <!-- Main Editor + Preview Area -->
+    <main class="workspace">
+      <div id="tab-bar" class="tab-bar hidden" role="tablist" aria-label="Open notes"></div>
+      <header class="workspace-header">
+        <div class="path-group">
+          <input
+            type="text"
+            id="note-path-input"
+            class="path-input"
+            placeholder="folder/note-name.md"
+            spellcheck="false"
+          >
+          <button type="button" id="rename-btn" class="btn btn-sm hidden" title="Rename / move note">Move</button>
+          <div id="active-note-tags" class="active-note-tags"></div>
+        </div>
+
+        <div class="toolbar-actions">
+          <span id="save-status" class="save-status">Ready</span>
+
+          <div class="view-switch" role="group" aria-label="View Mode">
+            <button type="button" class="view-btn active" data-view="split" title="Side-by-Side Split View">Split</button>
+            <button type="button" class="view-btn" data-view="edit" title="Editor Only">Edit</button>
+            <button type="button" class="view-btn" data-view="preview" title="Preview Only">Preview</button>
+          </div>
+
+          <button type="button" id="autosave-btn" class="btn btn-sm" aria-pressed="true" title="Autosave while typing (click to turn off)">Autosave: On</button>
+          <button type="button" id="popout-btn" class="btn btn-sm" title="Open this note in its own window">Pop out</button>
+          <button type="button" id="copy-path-btn" class="btn btn-sm" title="Copy the note's absolute file path">Copy path</button>
+          <button type="button" id="save-btn" class="btn btn-sm" title="Save Note (Ctrl/Cmd+S)">Save</button>
+          <button type="button" id="delete-btn" class="btn btn-sm btn-danger" title="Delete Note">Delete</button>
+        </div>
+      </header>
+
+      <div class="panes" id="panes" data-view="split">
+        <!-- Markdown Editor Pane -->
+        <section class="pane pane-editor">
+          <textarea
+            id="editor"
+            class="editor-textarea"
+            placeholder="Write Markdown here... Paste or drop images directly to upload!"
+            spellcheck="false"
+          ></textarea>
+        </section>
+
+        <!-- Draggable Split Divider -->
+        <div class="pane-resizer" id="pane-resizer" title="Drag to resize split view (double-click to reset)"></div>
+
+        <!-- Live Highlighted HTML Preview Pane -->
+        <section class="pane pane-preview" id="preview-pane">
+          <article id="preview" class="markdown-body"></article>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- In-page replacement for alert/confirm/prompt (WKWebView under Wails ignores those on macOS) -->
+  <dialog id="ui-dialog" class="ui-dialog">
+    <form method="dialog">
+      <p id="ui-dialog-message" class="ui-dialog-message"></p>
+      <input id="ui-dialog-input" class="ui-dialog-input hidden" type="text" autocomplete="off" spellcheck="false">
+      <div class="ui-dialog-actions">
+        <button type="button" id="ui-dialog-cancel" class="btn btn-sm">Cancel</button>
+        <button type="submit" id="ui-dialog-ok" class="btn btn-sm btn-primary" value="ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

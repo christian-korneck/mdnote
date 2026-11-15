@@ -1,0 +1,99 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  # mdnote-gui needs cgo on Linux and macOS, so those targets build on native runners.
+  # GoReleaser OSS cannot merge builds from several runners; the archives are attached
+  # to the release through extra_files in .goreleaser.yaml.
+  gui:
+    needs: test
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, goos: linux, goarch: amd64 }
+          - { runner: ubuntu-24.04-arm, goos: linux, goarch: arm64 }
+          - { runner: macos-15, goos: darwin, goarch: arm64 }
+          - { runner: macos-15, goos: darwin, goarch: amd64 }
+          - { runner: ubuntu-24.04, goos: windows, goarch: amd64 }
+          - { runner: ubuntu-24.04, goos: windows, goarch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install GUI build dependencies
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
+
+      - name: Build and package mdnote-gui
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          # Wails needs cgo on Linux and macOS, not on Windows.
+          CGO_ENABLED: ${{ matrix.goos == 'windows' && '0' || '1' }}
+        run: |
+          set -euo pipefail
+          bin=mdnote-gui
+          ldflags="-s -w"
+          if [ "$GOOS" = windows ]; then
+            bin=mdnote-gui.exe
+          fi
+          mkdir -p out gui-dist
+          go build -trimpath -tags production -ldflags "$ldflags" -o "out/$bin" ./cmd/mdnote-gui
+          cp README.md out/
+          name="mdnote-gui_${GITHUB_REF_NAME#v}_${GOOS}_${GOARCH}"
+          if [ "$GOOS" = windows ]; then
+            (cd out && zip -q "../gui-dist/$name.zip" "$bin" README.md)
+          else
+            tar -czf "gui-dist/$name.tar.gz" -C out "$bin" README.md
+          fi
+          ls -l gui-dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gui-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: gui-dist/*
+          if-no-files-found: error
+
+  release:
+    needs: gui
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: gui-*
+          merge-multiple: true
+          path: gui-dist
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

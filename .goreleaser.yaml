@@ -1,0 +1,40 @@
+# GoReleaser builds the static server for every target. mdnote-gui is built by the
+# release workflow's matrix on native runners (cgo on Linux/macOS) into gui-dist/ and
+# attached here through extra_files.
+version: 2
+
+project_name: mdnote
+
+builds:
+  - id: mdnote
+    main: ./cmd/mdnote
+    binary: mdnote
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: [-s -w]
+
+archives:
+  - id: mdnote
+    ids: [mdnote]
+    name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  extra_files:
+    - glob: ./gui-dist/*
+
+release:
+  extra_files:
+    - glob: ./gui-dist/*
+
+changelog:
+  sort: asc
