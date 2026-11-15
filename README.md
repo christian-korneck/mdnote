@@ -10,7 +10,7 @@ Features: Fast (scales to thousands of notes), Side-by-side Markdown editor, pas
 
 Choose between viewing the GUI in the browser (`mdnote`) or using a Desktop app (`mdnote-gui`, [Wails](https://wails.io/) based).
 
-Local only. If you need sync, just put your notes dir on Dropbox, git, syncthing, etc. Intentionally no MCP server - just point your agent at your notes dir (your agent should be good enough a grepping your notes files on its own).
+Local only. If you need sync, just put your notes dir on Dropbox, git, syncthing, etc. Intentionally no MCP server - just point your agent at your notes dir (your agent should be good enough at grepping your notes files on its own).
 
 ## Installation
 
