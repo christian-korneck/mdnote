@@ -22,8 +22,10 @@ archives:
     name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     format_overrides:
+      # The bare .exe (GoReleaser adds the extension), so it can be codesigned and
+      # replaced in the release by hand.
       - goos: windows
-        formats: [zip]
+        formats: [binary]
     files:
       - README.md
 

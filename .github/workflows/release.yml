@@ -12,7 +12,7 @@ jobs:
     uses: ./.github/workflows/test.yml
 
   # mdnote-gui needs cgo on Linux and macOS, so those targets build on native runners.
-  # GoReleaser OSS cannot merge builds from several runners; the archives are attached
+  # GoReleaser OSS cannot merge builds from several runners; the files are attached
   # to the release through extra_files in .goreleaser.yaml.
   gui:
     needs: test
@@ -55,11 +55,12 @@ jobs:
           fi
           mkdir -p out gui-dist
           go build -trimpath -tags production -ldflags "$ldflags" -o "out/$bin" ./cmd/mdnote-gui
-          cp README.md out/
           name="mdnote-gui_${GITHUB_REF_NAME#v}_${GOOS}_${GOARCH}"
           if [ "$GOOS" = windows ]; then
-            (cd out && zip -q "../gui-dist/$name.zip" "$bin" README.md)
+            # The bare .exe, so it can be codesigned and replaced in the release by hand.
+            cp "out/$bin" "gui-dist/$name.exe"
           else
+            cp README.md out/
             tar -czf "gui-dist/$name.tar.gz" -C out "$bin" README.md
           fi
           ls -l gui-dist
