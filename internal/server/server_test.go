@@ -289,6 +289,9 @@ func TestSettingsEndpoints(t *testing.T) {
 	if !strings.Contains(get("/"), `<html lang="en" data-autosave="true" style="--split-ratio: 50%"`+dirAttrs) {
 		t.Fatal("GET / doesn't carry the default settings on <html>")
 	}
+	if title := `<title>mdnote - ` + html.EscapeString(st.RootDir()) + `</title>`; !strings.Contains(get("/"), title) {
+		t.Fatalf("GET / doesn't contain %s", title)
+	}
 	if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {
 		t.Fatalf("config file created without a change (stat err %v)", err)
 	}

@@ -72,6 +72,8 @@
 
   // Pop-out window: /?popout=<path> shows just that note, without sidebar or tabs.
   const POPOUT_PATH = new URLSearchParams(location.search).get("popout") || "";
+  // "mdnote - <notes folder>", set by the server.
+  const BASE_TITLE = document.title;
 
   let searchTimer = null;
   let previewTimer = null;
@@ -390,7 +392,7 @@
       tab.path = state.currentPath;
       tab.dirty = state.dirty;
     }
-    if (POPOUT_PATH) document.title = state.currentPath ? `${state.currentPath} – mdnote` : "mdnote";
+    if (POPOUT_PATH) document.title = state.currentPath ? `${state.currentPath} – mdnote` : BASE_TITLE;
     renderTabs();
   }
 

@@ -82,6 +82,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	// Put the settings on <html> so the theme and split divider are right on first paint.
 	data = bytes.Replace(data, []byte(`<html lang="en">`), []byte(htmlTag(s.loadSettings(), s.store.RootDir())), 1)
+	// Show the notes folder in the page title: "mdnote - <abs path>".
+	data = bytes.Replace(data, []byte(`<title>mdnote</title>`), []byte(`<title>mdnote - `+html.EscapeString(s.store.RootDir())+`</title>`), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(data)
 }

@@ -60,7 +60,7 @@ func main() {
 	})
 
 	gui.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "mdnote",
+		Title:  "mdnote - " + st.RootDir(),
 		Width:  1400,
 		Height: 900,
 		URL:    "/",
