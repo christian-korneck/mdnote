@@ -51,6 +51,13 @@
   const editorEl = document.getElementById("editor");
   const previewPane = document.getElementById("preview-pane");
   const previewEl = document.getElementById("preview");
+  const editorHighlights = document.getElementById("editor-highlights");
+  const findBar = document.getElementById("find-bar");
+  const findInput = document.getElementById("find-input");
+  const findCount = document.getElementById("find-count");
+  const findPrevBtn = document.getElementById("find-prev");
+  const findNextBtn = document.getElementById("find-next");
+  const findCloseBtn = document.getElementById("find-close");
 
   const uiDialog = document.getElementById("ui-dialog");
   const uiDialogMessage = document.getElementById("ui-dialog-message");
@@ -73,6 +80,13 @@
   // server puts them on <html> when it serves the page; changes go to PATCH /api/settings.
   let autosave = document.documentElement.dataset.autosave !== "false";
   let syncingScroll = false;
+  // Find in note (see the "Find in note" section).
+  let findPane = "editor"; // Split view: the pane clicked last ("editor" or "preview")
+  let findIndex = 0; // current match in the active pane
+  let findStartCaret = null; // editor cursor when the bar was opened from the editor
+  let editorRanges = []; // [start, end) of each match in the editor text
+  let editorMarks = []; // per match: its <mark> elements in the editor layer
+  let previewMarks = []; // per match: its <mark> elements in the preview
 
   function saveSettings(patch) {
     api("/api/settings", {
@@ -446,7 +460,7 @@
     pathInput.value = note.path;
     renameBtn.classList.add("hidden");
     editorEl.value = note.content || "";
-    previewEl.innerHTML = note.html || "";
+    setPreviewHTML(note.html || "");
     renderActiveNoteTags(note.tags || []);
     saveStatus.textContent = "Saved";
     highlightSelectedNoteInSidebar();
@@ -459,7 +473,7 @@
     pathInput.value = "";
     renameBtn.classList.add("hidden");
     editorEl.value = "";
-    previewEl.innerHTML = "";
+    setPreviewHTML("");
     renderActiveNoteTags([]);
     highlightSelectedNoteInSidebar();
     syncActiveTab();
@@ -643,7 +657,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: editorEl.value, path: pathInput.value }),
       });
-      previewEl.innerHTML = res.html || "";
+      setPreviewHTML(res.html || "");
     } catch (err) {
       console.error("Preview render error:", err);
     }
@@ -745,7 +759,7 @@
         try {
           const note = await api(`/api/notes/${encodeNotePath(state.currentPath)}`);
           editorEl.value = note.content || "";
-          previewEl.innerHTML = note.html || "";
+          setPreviewHTML(note.html || "");
           renderActiveNoteTags(note.tags || []);
         } catch (_) {
           // Active note was deleted on disk
@@ -1026,6 +1040,11 @@
       renderTabs();
     }
     saveStatus.textContent = "Modified";
+    // Editor find highlights follow the text at once; the preview's follow its next render.
+    if (findIsOpen()) {
+      highlightEditor(findRegex());
+      renderFindState();
+    }
     clearTimeout(previewTimer);
     previewTimer = setTimeout(renderLivePreview, 120);
 
@@ -1085,6 +1104,7 @@
       document.querySelectorAll(".view-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       panesEl.dataset.view = btn.dataset.view;
+      updateFind({ restart: true }); // the active find pane may have changed
     });
   });
 
@@ -1136,6 +1156,270 @@
       syncingScroll = false;
     });
   });
+
+  // Find in note (Ctrl/Cmd+F). All matches are highlighted in both panes. The counter and
+  // Next/Previous use the active pane: the editor in Edit view, the preview in Preview
+  // view, and in Split view the pane clicked last. A textarea can't color parts of its
+  // text, so the editor's matches are drawn in #editor-highlights, a layer behind the
+  // transparent textarea with the same text layout (see style.css).
+  const editorHighlightsInner = document.createElement("div");
+  editorHighlights.appendChild(editorHighlightsInner);
+
+  function setPreviewHTML(html) {
+    previewEl.innerHTML = html;
+    updateFind();
+  }
+
+  function findIsOpen() {
+    return !findBar.classList.contains("hidden");
+  }
+
+  function activeFindPane() {
+    const view = panesEl.dataset.view;
+    if (view === "edit") return "editor";
+    if (view === "preview") return "preview";
+    return findPane;
+  }
+
+  function activeFindMarks() {
+    return activeFindPane() === "editor" ? editorMarks : previewMarks;
+  }
+
+  // Plain text, case-insensitive. The text itself is not lowercased, so offsets stay right.
+  function findRegex() {
+    const q = findInput.value;
+    return q ? new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu") : null;
+  }
+
+  function matchRanges(re, text) {
+    const ranges = [];
+    for (const m of text.matchAll(re)) ranges.push([m.index, m.index + m[0].length]);
+    return ranges;
+  }
+
+  function highlightEditor(re) {
+    editorRanges = [];
+    editorMarks = [];
+    if (!re) {
+      editorHighlightsInner.textContent = "";
+      return;
+    }
+    const text = editorEl.value;
+    editorRanges = matchRanges(re, text);
+    let html = "";
+    let pos = 0;
+    for (const [start, end] of editorRanges) {
+      html += escapeHTML(text.slice(pos, start)) + `<mark class="find-hit">${escapeHTML(text.slice(start, end))}</mark>`;
+      pos = end;
+    }
+    // The extra space gives a trailing empty line its height, as in the textarea.
+    editorHighlightsInner.innerHTML = html + escapeHTML(text.slice(pos)) + " ";
+    editorMarks = [...editorHighlightsInner.children].map((mark) => [mark]);
+    syncEditorHighlights();
+  }
+
+  // Keep the layer's width (without the scrollbar) and scroll position equal to the textarea's.
+  function syncEditorHighlights() {
+    if (!editorRanges.length) return;
+    editorHighlights.style.width = `${editorEl.clientWidth}px`;
+    editorHighlightsInner.style.transform = `translateY(${-editorEl.scrollTop}px)`;
+  }
+
+  function clearPreviewHighlights() {
+    previewMarks = [];
+    const marks = previewEl.querySelectorAll("mark.find-hit");
+    if (!marks.length) return;
+    for (const mark of marks) mark.replaceWith(...mark.childNodes);
+    previewEl.normalize();
+  }
+
+  // Search the preview's text as one string, so matches across formatting (bold, links,
+  // highlighted code) are found too. A match spanning several text nodes gets one <mark>
+  // per node, and counts once.
+  function highlightPreview(re) {
+    clearPreviewHighlights();
+    if (!re) return;
+    const nodes = [];
+    let text = "";
+    const walker = document.createTreeWalker(previewEl, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      nodes.push({ node, start: text.length });
+      text += node.data;
+    }
+    const ranges = matchRanges(re, text);
+    previewMarks = ranges.map(() => []);
+    // Wrap from the end: splitting a text node keeps its first part in the same node, so
+    // the offsets of everything before it stay valid.
+    let ni = nodes.length - 1;
+    for (let mi = ranges.length - 1; mi >= 0; mi--) {
+      const [start, end] = ranges[mi];
+      while (ni >= 0 && nodes[ni].start >= end) ni--;
+      for (let k = ni; k >= 0 && nodes[k].start + nodes[k].node.data.length > start; k--) {
+        const { node, start: nodeStart } = nodes[k];
+        const from = Math.max(start, nodeStart) - nodeStart;
+        const to = Math.min(end, nodeStart + node.data.length) - nodeStart;
+        const piece = node.splitText(from);
+        piece.splitText(to - from);
+        const mark = document.createElement("mark");
+        mark.className = "find-hit";
+        piece.replaceWith(mark);
+        mark.appendChild(piece);
+        previewMarks[mi].unshift(mark);
+      }
+    }
+  }
+
+  // The match to start at for a new query: the first one at or after the editor cursor
+  // (when the bar was opened from the editor), else the first in the visible area.
+  function firstFindIndex() {
+    const pane = activeFindPane();
+    if (pane === "editor" && findStartCaret !== null) {
+      const i = editorRanges.findIndex(([start]) => start >= findStartCaret);
+      return i < 0 ? 0 : i;
+    }
+    let i;
+    if (pane === "editor") {
+      i = editorMarks.findIndex(([mark]) => mark.offsetTop + mark.offsetHeight > editorEl.scrollTop);
+    } else {
+      const top = previewPane.getBoundingClientRect().top;
+      i = previewMarks.findIndex((marks) => marks[0].getBoundingClientRect().bottom > top);
+    }
+    return i < 0 ? 0 : i;
+  }
+
+  // Recompute the matches of both panes. restart picks the first match again (new query,
+  // other pane); jump scrolls the current match into view.
+  function updateFind({ jump = false, restart = false } = {}) {
+    if (!findIsOpen()) return;
+    const re = findRegex();
+    highlightEditor(re);
+    highlightPreview(re);
+    if (restart) findIndex = firstFindIndex();
+    renderFindState();
+    if (jump) scrollToCurrentMatch();
+  }
+
+  function renderFindState() {
+    const marks = activeFindMarks();
+    findIndex = Math.max(0, Math.min(findIndex, marks.length - 1));
+    for (const el of document.querySelectorAll("mark.find-current")) el.classList.remove("find-current");
+    for (const el of marks[findIndex] || []) el.classList.add("find-current");
+    if (!findInput.value) {
+      findCount.textContent = "";
+    } else if (!marks.length) {
+      findCount.textContent = "No results";
+    } else {
+      const where = panesEl.dataset.view === "split" ? ` · ${activeFindPane()}` : "";
+      findCount.textContent = `${findIndex + 1}/${marks.length}${where}`;
+    }
+  }
+
+  // Scroll the active pane so the current match sits about a third from the top. In the
+  // editor, the proportional scroll sync then moves the preview along.
+  function scrollToCurrentMatch() {
+    const mark = (activeFindMarks()[findIndex] || [])[0];
+    if (!mark) return;
+    if (activeFindPane() === "editor") {
+      editorEl.scrollTop = mark.offsetTop - editorEl.clientHeight / 3;
+      syncEditorHighlights();
+      return;
+    }
+    const paneTop = previewPane.getBoundingClientRect().top;
+    previewPane.scrollTop += mark.getBoundingClientRect().top - paneTop - previewPane.clientHeight / 3;
+    // Long lines in code blocks scroll sideways.
+    const pre = mark.closest("pre");
+    if (pre && pre.scrollWidth > pre.clientWidth) {
+      const preRect = pre.getBoundingClientRect();
+      const markRect = mark.getBoundingClientRect();
+      if (markRect.left < preRect.left || markRect.right > preRect.right) {
+        pre.scrollLeft += markRect.left - preRect.left - pre.clientWidth / 3;
+      }
+    }
+  }
+
+  function stepFind(delta) {
+    const count = activeFindMarks().length;
+    if (!count) return;
+    findIndex = (findIndex + delta + count) % count;
+    renderFindState();
+    scrollToCurrentMatch();
+  }
+
+  function openFind() {
+    findStartCaret = document.activeElement === editorEl ? editorEl.selectionStart : null;
+    const wasOpen = findIsOpen();
+    findBar.classList.remove("hidden");
+    findInput.focus();
+    findInput.select();
+    if (!wasOpen) updateFind({ restart: true, jump: true });
+  }
+
+  // selectMatch: closing from the find bar puts the editor cursor on the current match.
+  function closeFind({ selectMatch = false } = {}) {
+    if (!findIsOpen()) return;
+    const range = activeFindPane() === "editor" && editorRanges.length ? editorRanges[findIndex] : null;
+    findBar.classList.add("hidden");
+    highlightEditor(null);
+    clearPreviewHighlights();
+    findCount.textContent = "";
+    if (selectMatch && activeFindPane() === "editor") {
+      editorEl.focus({ preventScroll: true });
+      if (range) editorEl.setSelectionRange(range[0], range[1]);
+    }
+  }
+
+  // Capture phase, so Ctrl/Cmd+F works wherever the focus is (and replaces the browser's find).
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") {
+        if (uiDialog.open) return;
+        e.preventDefault();
+        openFind();
+      } else if (e.key === "Escape" && findIsOpen() && (document.activeElement === editorEl || document.activeElement === document.body)) {
+        closeFind();
+      }
+    },
+    true,
+  );
+
+  findInput.addEventListener("input", () => updateFind({ restart: true, jump: true }));
+  findInput.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      stepFind(e.shiftKey ? -1 : 1);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeFind({ selectMatch: true });
+    }
+  });
+  findPrevBtn.addEventListener("click", () => {
+    stepFind(-1);
+    findInput.focus();
+  });
+  findNextBtn.addEventListener("click", () => {
+    stepFind(1);
+    findInput.focus();
+  });
+  findCloseBtn.addEventListener("click", () => closeFind({ selectMatch: true }));
+
+  // Split view: the pane clicked last is the one Next/Previous step through.
+  function setFindPane(pane) {
+    if (findPane === pane) return;
+    findPane = pane;
+    if (findIsOpen() && panesEl.dataset.view === "split") {
+      findIndex = firstFindIndex();
+      renderFindState();
+    }
+  }
+  editorEl.addEventListener("mousedown", () => setFindPane("editor"));
+  editorEl.addEventListener("focus", () => setFindPane("editor"));
+  previewPane.addEventListener("mousedown", () => setFindPane("preview"));
+
+  editorEl.addEventListener("scroll", syncEditorHighlights);
+  new ResizeObserver(syncEditorHighlights).observe(editorEl);
 
   // Light / Dark / System theme. "system" is the absence of the data-theme attribute, so
   // the CSS follows prefers-color-scheme. The server sets the saved value on <html>

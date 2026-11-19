@@ -142,6 +142,8 @@
       <div class="panes" id="panes" data-view="split">
         <!-- Markdown Editor Pane -->
         <section class="pane pane-editor">
+          <!-- Find-in-note highlights, drawn behind the transparent textarea (see style.css) -->
+          <div id="editor-highlights" class="editor-highlights" aria-hidden="true"></div>
           <textarea
             id="editor"
             class="editor-textarea"
@@ -157,6 +159,15 @@
         <section class="pane pane-preview" id="preview-pane">
           <article id="preview" class="markdown-body"></article>
         </section>
+
+        <!-- Find in note (Ctrl/Cmd+F) -->
+        <div id="find-bar" class="find-bar hidden" role="search">
+          <input id="find-input" class="find-input" type="text" placeholder="Find in note" aria-label="Find in note" autocomplete="off" spellcheck="false">
+          <span id="find-count" class="find-count" aria-live="polite"></span>
+          <button type="button" id="find-prev" class="find-btn" title="Previous match (Shift+Enter)" aria-label="Previous match">&#8593;</button>
+          <button type="button" id="find-next" class="find-btn" title="Next match (Enter)" aria-label="Next match">&#8595;</button>
+          <button type="button" id="find-close" class="find-btn" title="Close (Esc)" aria-label="Close">&#10005;</button>
+        </div>
       </div>
     </main>
   </div>
