@@ -59,6 +59,13 @@
   const findNextBtn = document.getElementById("find-next");
   const findCloseBtn = document.getElementById("find-close");
   const findRegexBtn = document.getElementById("find-regex");
+  const replaceToggle = document.getElementById("replace-toggle");
+  const replaceRow = document.getElementById("replace-row");
+  const replaceInput = document.getElementById("replace-input");
+  const replaceOneBtn = document.getElementById("replace-one");
+  const replaceAllBtn = document.getElementById("replace-all");
+  const findBtn = document.getElementById("find-btn");
+  const replaceBtn = document.getElementById("replace-btn");
 
   const uiDialog = document.getElementById("ui-dialog");
   const uiDialogMessage = document.getElementById("ui-dialog-message");
@@ -92,6 +99,8 @@
   let previewMarks = []; // per match: its <mark> elements in the preview
   let findRegexMode = false; // the .* toggle (not saved)
   let findInvalid = false; // regex mode with a pattern that doesn't compile
+  let replaceOpen = false; // the replace row (not saved; never shown in Preview view)
+  let findNotice = ""; // e.g. "12 replaced": shown instead of the count until the next find action or keystroke
 
   function saveSettings(patch) {
     api("/api/settings", {
@@ -1109,6 +1118,7 @@
       document.querySelectorAll(".view-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       panesEl.dataset.view = btn.dataset.view;
+      renderReplaceRow(); // no replace in Preview view
       updateFind({ restart: true }); // the active find pane may have changed
     });
   });
@@ -1179,11 +1189,17 @@
     return !findBar.classList.contains("hidden");
   }
 
+  // Replace edits the Markdown source, so it isn't offered in Preview view, and while it's
+  // open Split view uses the editor's matches.
+  function replaceVisible() {
+    return replaceOpen && panesEl.dataset.view !== "preview";
+  }
+
   function activeFindPane() {
     const view = panesEl.dataset.view;
     if (view === "edit") return "editor";
     if (view === "preview") return "preview";
-    return findPane;
+    return replaceVisible() ? "editor" : findPane;
   }
 
   function activeFindMarks() {
@@ -1309,6 +1325,7 @@
   // other pane); jump scrolls the current match into view.
   function updateFind({ jump = false, restart = false } = {}) {
     if (!findIsOpen()) return;
+    if (restart) findNotice = "";
     const re = findRegex();
     highlightEditor(re);
     highlightPreview(re);
@@ -1323,7 +1340,9 @@
     for (const el of document.querySelectorAll("mark.find-current")) el.classList.remove("find-current");
     for (const el of marks[findIndex] || []) el.classList.add("find-current");
     findInput.classList.toggle("invalid", findInvalid);
-    if (!findInput.value) {
+    if (findNotice) {
+      findCount.textContent = findNotice;
+    } else if (!findInput.value) {
       findCount.textContent = "";
     } else if (findInvalid) {
       findCount.textContent = "Invalid regex";
@@ -1333,6 +1352,7 @@
       const where = panesEl.dataset.view === "split" ? ` · ${activeFindPane()}` : "";
       findCount.textContent = `${findIndex + 1}/${marks.length}${where}`;
     }
+    replaceOneBtn.disabled = replaceAllBtn.disabled = !editorRanges.length;
   }
 
   // Scroll the active pane so the current match sits about a third from the top. In the
@@ -1359,6 +1379,7 @@
   }
 
   function stepFind(delta) {
+    findNotice = "";
     const count = activeFindMarks().length;
     if (!count) return;
     findIndex = (findIndex + delta + count) % count;
@@ -1366,13 +1387,29 @@
     scrollToCurrentMatch();
   }
 
-  function openFind() {
+  // replace: open with the replace row (Ctrl+H / Option+Cmd+F) or without it (Ctrl/Cmd+F).
+  function openFind({ replace = false } = {}) {
     findStartCaret = document.activeElement === editorEl ? editorEl.selectionStart : null;
     const wasOpen = findIsOpen();
+    const paneBefore = activeFindPane();
+    replaceOpen = replace;
     findBar.classList.remove("hidden");
-    findInput.focus();
-    findInput.select();
+    renderReplaceRow();
+    const input = replaceVisible() && findInput.value ? replaceInput : findInput;
+    input.focus();
+    input.select();
     if (!wasOpen) updateFind({ restart: true, jump: true });
+    else if (activeFindPane() !== paneBefore) updateFind({ restart: true });
+  }
+
+  function renderReplaceRow() {
+    const preview = panesEl.dataset.view === "preview";
+    replaceBtn.disabled = preview;
+    replaceBtn.title = preview ? "Replace isn't available in Preview view" : `Find and replace (${IS_MAC ? "\u2325\u2318F" : "Ctrl+H"})`;
+    if (!findIsOpen()) return;
+    replaceToggle.classList.toggle("hidden", preview);
+    replaceRow.classList.toggle("hidden", !replaceVisible());
+    replaceToggle.setAttribute("aria-expanded", String(replaceVisible()));
   }
 
   // selectMatch: closing from the find bar puts the editor cursor on the current match.
@@ -1380,6 +1417,7 @@
     if (!findIsOpen()) return;
     const range = activeFindPane() === "editor" && editorRanges.length ? editorRanges[findIndex] : null;
     findBar.classList.add("hidden");
+    findNotice = "";
     highlightEditor(null);
     clearPreviewHighlights();
     findCount.textContent = "";
@@ -1389,11 +1427,103 @@
     }
   }
 
-  // Capture phase, so Ctrl/Cmd+F works wherever the focus is (and replaces the browser's find).
+  // The replace text: literal in plain mode; in regex mode JavaScript's replacement
+  // patterns ($1-$99, $<name>, $&, $`, $', $$), expanded for the match m in text.
+  function replacementFor(m, text) {
+    const template = replaceInput.value;
+    if (!findRegexMode) return template;
+    const groups = m.length - 1;
+    return template.replace(/\$(\$|&|`|'|\d{1,2}|<([^>]*)>)/g, (token, what, name) => {
+      if (what === "$") return "$";
+      if (what === "&") return m[0];
+      if (what === "`") return text.slice(0, m.index);
+      if (what === "'") return text.slice(m.index + m[0].length);
+      if (name !== undefined) return m.groups ? (m.groups[name] ?? "") : token;
+      // $nn if group nn exists, else $n followed by a digit; $0 and missing groups stay as typed.
+      if (what.length === 2 && +what >= 1 && +what <= groups) return m[+what] ?? "";
+      const n = +what[0];
+      return n >= 1 && n <= groups ? (m[n] ?? "") + what.slice(1) : token;
+    });
+  }
+
+  // Replace [start, end) of the editor text like typing would: execCommand keeps the
+  // browser's undo (Ctrl/Cmd+Z) and fires the editor's input event (modified state,
+  // autosave, preview, find highlights). Never set editorEl.value for replacements.
+  function editEditor(start, end, text) {
+    const scrollTop = editorEl.scrollTop;
+    editorEl.focus({ preventScroll: true });
+    editorEl.setSelectionRange(start, end);
+    const done = text ? document.execCommand("insertText", false, text) : document.execCommand("delete");
+    if (!done) {
+      editorEl.setRangeText(text, start, end, "end");
+      editorEl.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    editorEl.scrollTop = scrollTop;
+    syncEditorHighlights();
+    replaceInput.focus({ preventScroll: true });
+  }
+
+  // Replace the current editor match, then go to the next match after the inserted text.
+  function replaceOne() {
+    if (!replaceVisible() || !editorRanges.length) return;
+    findNotice = "";
+    const text = editorEl.value;
+    const [start, end] = editorRanges[findIndex];
+    const re = findRegex();
+    re.lastIndex = start;
+    const insert = replacementFor(re.exec(text), text);
+    editEditor(start, end, insert);
+    const next = editorRanges.findIndex(([s]) => s >= start + insert.length);
+    findIndex = next < 0 ? 0 : next;
+    renderFindState();
+    scrollToCurrentMatch();
+  }
+
+  // Replace every match in one edit, so a single undo restores them all.
+  function replaceAll() {
+    if (!replaceVisible() || !editorRanges.length) return;
+    const text = editorEl.value;
+    let out = "";
+    let pos = 0;
+    let count = 0;
+    for (const m of text.matchAll(findRegex())) {
+      if (!m[0].length) continue;
+      out += text.slice(pos, m.index) + replacementFor(m, text);
+      pos = m.index + m[0].length;
+      count++;
+    }
+    editEditor(0, text.length, out + text.slice(pos));
+    findNotice = `${count} replaced`;
+    renderFindState();
+  }
+
+  const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  // The usual editor shortcuts (as in VS Code): Option+Cmd+F on macOS, Ctrl+H elsewhere.
+  // e.code, because Option changes e.key on macOS.
+  function isReplaceShortcut(e) {
+    return IS_MAC
+      ? e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey && e.code === "KeyF"
+      : e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "h";
+  }
+  replaceToggle.title = `Toggle replace (${IS_MAC ? "\u2325\u2318F" : "Ctrl+H"})`;
+  findBtn.title = `Find in note (${IS_MAC ? "\u2318F" : "Ctrl+F"})`;
+  // The toolbar buttons do what the shortcuts do. They don't take the focus on mousedown,
+  // so a new search still starts at the editor cursor.
+  for (const btn of [findBtn, replaceBtn]) btn.addEventListener("mousedown", (e) => e.preventDefault());
+  findBtn.addEventListener("click", () => openFind());
+  replaceBtn.addEventListener("click", () => openFind({ replace: true }));
+  renderReplaceRow();
+  replaceAllBtn.title = `Replace all matches (${IS_MAC ? "\u2325\u2318Enter" : "Ctrl+Alt+Enter"})`;
+
+  // Capture phase, so the shortcuts work wherever the focus is (and replace the browser's).
   document.addEventListener(
     "keydown",
     (e) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") {
+      if (isReplaceShortcut(e)) {
+        if (uiDialog.open) return;
+        e.preventDefault();
+        openFind({ replace: true });
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") {
         if (uiDialog.open) return;
         e.preventDefault();
         openFind();
@@ -1429,15 +1559,40 @@
     findRegexMode = !findRegexMode;
     findRegexBtn.setAttribute("aria-pressed", String(findRegexMode));
     findRegexBtn.title = `Regular expression: ${findRegexMode ? "on" : "off"}`;
+    replaceInput.placeholder = findRegexMode ? "Replace ($1 = group 1)" : "Replace";
     updateFind({ restart: true, jump: true });
     findInput.focus();
   });
 
+  replaceToggle.addEventListener("click", () => {
+    const paneBefore = activeFindPane();
+    replaceOpen = !replaceOpen;
+    renderReplaceRow();
+    if (activeFindPane() !== paneBefore) updateFind({ restart: true });
+    (replaceOpen ? replaceInput : findInput).focus();
+  });
+  replaceInput.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const all = IS_MAC ? e.metaKey && e.altKey : e.ctrlKey && e.altKey;
+      if (all) replaceAll();
+      else replaceOne();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeFind({ selectMatch: true });
+    }
+  });
+  replaceOneBtn.addEventListener("click", replaceOne);
+  replaceAllBtn.addEventListener("click", replaceAll);
+
   // Split view: the pane clicked last is the one Next/Previous step through.
   function setFindPane(pane) {
     if (findPane === pane) return;
+    const paneBefore = activeFindPane();
     findPane = pane;
-    if (findIsOpen() && panesEl.dataset.view === "split") {
+    if (findIsOpen() && activeFindPane() !== paneBefore) {
       findIndex = firstFindIndex();
       renderFindState();
     }
@@ -1446,6 +1601,11 @@
   editorEl.addEventListener("focus", () => setFindPane("editor"));
   previewPane.addEventListener("mousedown", () => setFindPane("preview"));
 
+  editorEl.addEventListener("keydown", () => {
+    if (!findNotice) return;
+    findNotice = "";
+    renderFindState();
+  });
   editorEl.addEventListener("scroll", syncEditorHighlights);
   new ResizeObserver(syncEditorHighlights).observe(editorEl);
 

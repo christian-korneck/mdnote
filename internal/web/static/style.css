@@ -932,20 +932,62 @@ body.popout #popout-btn {
   pointer-events: none;
 }
 
-/* Find bar (Ctrl/Cmd+F): floats over the top-right corner of the panes. */
+/* Find bar (Ctrl/Cmd+F): floats over the top-right corner of the panes. The replace
+   toggle sits left of the rows (find; replace when open). */
 .find-bar {
   position: absolute;
   top: 8px;
   right: 18px; /* clear of the scrollbar */
   z-index: 5;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 2px;
-  padding: 4px 4px 4px 6px;
+  padding: 4px 4px 4px 2px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow);
+}
+
+.find-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.replace-toggle {
+  padding: 0 5px;
+  font-size: 16px;
+}
+
+.replace-toggle .chevron {
+  display: inline-block;
+  transition: transform 0.12s ease;
+}
+
+.replace-toggle[aria-expanded="true"] .chevron {
+  transform: rotate(90deg);
+}
+
+.find-row .btn-sm {
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+.btn:disabled,
+.find-bar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn:disabled:hover {
+  background: var(--bg);
 }
 
 .find-input {
