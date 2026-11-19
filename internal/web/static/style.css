@@ -607,16 +607,25 @@ body.popout #popout-btn {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 6px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
 
+/* The file name, with the note's tags on a thin line below it. */
 .path-group {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.path-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
   min-width: 0;
 }
 
@@ -638,10 +647,37 @@ body.popout #popout-btn {
   outline: none;
 }
 
+/* One line: too many tags scroll sideways, with an extra-thin scrollbar that only
+   appears then. The title attribute lists them all. The height is always set
+   explicitly (app.js adds .overflowing, with room for the scrollbar below the tags):
+   WebKit doesn't redo the surrounding layout when a scrollbar appears on its own, so
+   the tags got squeezed and the header kept stale heights. */
 .active-note-tags {
+  flex: none;
   display: flex;
+  align-items: flex-start;
   gap: 4px;
+  height: 13px;
   overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.active-note-tags.overflowing {
+  height: 17px;
+}
+
+.active-note-tags::-webkit-scrollbar {
+  height: 4px;
+}
+
+.active-note-tags:empty {
+  display: none;
+}
+
+.active-note-tags .note-item-tag {
+  line-height: 13px;
+  padding: 0 5px;
+  white-space: nowrap;
 }
 
 .toolbar-actions {

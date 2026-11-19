@@ -111,14 +111,17 @@
       <div id="tab-bar" class="tab-bar hidden" role="tablist" aria-label="Open notes"></div>
       <header class="workspace-header">
         <div class="path-group">
-          <input
-            type="text"
-            id="note-path-input"
-            class="path-input"
-            placeholder="folder/note-name.md"
-            spellcheck="false"
-          >
-          <button type="button" id="rename-btn" class="btn btn-sm hidden" title="Rename / move note">Move</button>
+          <div class="path-row">
+            <input
+              type="text"
+              id="note-path-input"
+              class="path-input"
+              placeholder="folder/note-name.md"
+              spellcheck="false"
+            >
+            <button type="button" id="rename-btn" class="btn btn-sm hidden" title="Rename / move note">Move</button>
+          </div>
+          <!-- The note's tags: one thin line below the file name (hidden when empty) -->
           <div id="active-note-tags" class="active-note-tags"></div>
         </div>
 

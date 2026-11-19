@@ -656,7 +656,15 @@
     activeNoteTags.innerHTML = (tags || [])
       .map((t) => `<span class="note-item-tag">#${escapeHTML(t)}</span>`)
       .join("");
+    activeNoteTags.title = (tags || []).map((t) => `#${t}`).join(" ");
+    fitActiveNoteTags();
   }
+
+  // Give the tag line room for its scrollbar only when the tags don't fit (see style.css).
+  function fitActiveNoteTags() {
+    activeNoteTags.classList.toggle("overflowing", activeNoteTags.scrollWidth > activeNoteTags.clientWidth);
+  }
+  new ResizeObserver(fitActiveNoteTags).observe(activeNoteTags);
 
   function highlightSelectedNoteInSidebar() {
     document.querySelectorAll(".note-item").forEach((el) => {
