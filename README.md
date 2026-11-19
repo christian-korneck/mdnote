@@ -6,7 +6,7 @@ A GUI (WebUI in the browser or Desktop app) to turn a folder with Markdown files
 
 All operations in the UI happen in the filesystem. There's no database, no special state. You can edit your `.md` files outside the app without causing issues. There's not even a search index - for features like search or tags the app "greps" the files.
 
-Features: Fast (scales to thousands of notes), Side-by-side Markdown editor, paste images, subfolders, tabs, pop out note to new window, auto-save (can get disabled), tags, search (full text or metadata search, with optional regex support), sorting, code syntax highlighting, frontmatter support (optional), copy a note's filepath to the clipboard, REST API with auth, light/dark theme.
+Features: Fast (scales to thousands of notes), Side-by-side Markdown editor, paste images, subfolders, tabs, pop out note to new window, auto-save (can get disabled), tags, search (full text or metadata search, with optional regex support), search/replace in notes (with optional regex), sorting, code syntax highlighting, frontmatter support (optional), copy a note's filepath to the clipboard, REST API with auth, light/dark theme.
 
 Choose between viewing the GUI in the browser (`mdnote`) or using a Desktop app (`mdnote-gui`, [Wails](https://wails.io/) based).
 
@@ -66,7 +66,7 @@ This app has no state of its own - all changes happen in the Markdown files. How
 CGO_ENABLED=0 go build -o mdnote ./cmd/mdnote
 ```
 
-### `mdnots-gui` (Wails-based Desktop app)
+### `mdnote-gui` (Wails-based Desktop app)
 
 On Linux/MacOS (CGO):
 
