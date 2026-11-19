@@ -106,3 +106,21 @@ func TestOpenNoWelcome(t *testing.T) {
 		t.Fatalf("expected empty notes dir with NoWelcome, found %v", entries)
 	}
 }
+
+// A notes folder behind a symlink isn't empty: Open must not add welcome.md to it.
+func TestOpenSymlinkedDir(t *testing.T) {
+	target := t.TempDir()
+	if err := os.WriteFile(filepath.Join(target, "note.md"), []byte("# Note\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("can't create a symlink: %v", err)
+	}
+	if _, _, err := Open(Config{Dir: link, SettingsPath: filepath.Join(t.TempDir(), "config.json")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "welcome.md")); !os.IsNotExist(err) {
+		t.Fatalf("Open wrote welcome.md into a non-empty folder behind a symlink (stat: %v)", err)
+	}
+}

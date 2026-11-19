@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -145,4 +146,69 @@ func TestSaveAsset(t *testing.T) {
 	if string(data) != "fake-png-bytes" {
 		t.Errorf("unexpected asset bytes: %q", string(data))
 	}
+}
+
+// makeLinkTarget returns a notes folder holding a.md and sub/b.md, for opening
+// through a symlink or junction.
+func makeLinkTarget(t *testing.T) string {
+	t.Helper()
+	target := filepath.Join(t.TempDir(), "real")
+	if err := os.MkdirAll(filepath.Join(target, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"a.md": "# A\n", "sub/b.md": "# B\n"} {
+		if err := os.WriteFile(filepath.Join(target, filepath.FromSlash(name)), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return target
+}
+
+// checkLinkedRoot opens a store at link, a symlink or junction to a makeLinkTarget
+// folder, and checks that it sees and changes the folder's notes.
+func checkLinkedRoot(t *testing.T, link string) {
+	t.Helper()
+	st, err := New(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.RootDir() != link {
+		t.Errorf("RootDir() = %q, want the link path %q", st.RootDir(), link)
+	}
+	notePaths := func() string {
+		res, err := st.Search(QueryOptions{Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var paths []string
+		for _, n := range res.Items {
+			paths = append(paths, n.Path)
+		}
+		sort.Strings(paths)
+		return strings.Join(paths, ",")
+	}
+	if got := notePaths(); got != "a.md,sub/b.md" {
+		t.Errorf("notes = %q, want a.md,sub/b.md", got)
+	}
+	if folders, err := st.ListFolders(); err != nil || strings.Join(folders, ",") != "sub" {
+		t.Errorf("ListFolders() = %v, %v; want [sub]", folders, err)
+	}
+	if note, err := st.Get("sub/b.md"); err != nil || note.Content != "# B\n" {
+		t.Errorf("Get(sub/b.md) = %v, %v", note, err)
+	}
+	if _, err := st.Save("c.md", []byte("# C\n"), true); err != nil {
+		t.Fatal(err)
+	}
+	if got := notePaths(); got != "a.md,c.md,sub/b.md" {
+		t.Errorf("notes after Save = %q, want a.md,c.md,sub/b.md", got)
+	}
+}
+
+func TestSymlinkedRoot(t *testing.T) {
+	target := makeLinkTarget(t)
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("can't create a symlink: %v", err)
+	}
+	checkLinkedRoot(t, link)
 }

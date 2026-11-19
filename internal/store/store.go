@@ -344,27 +344,34 @@ func (s *Store) CreateFolder(relFolder string) (string, error) {
 	return normRel, nil
 }
 
-// ListFolders returns all directory paths containing notes or existing inside rootDir.
-func (s *Store) ListFolders() ([]string, error) {
-	folderSet := make(map[string]struct{})
-	err := filepath.WalkDir(s.rootDir, func(path string, d fs.DirEntry, err error) error {
+// walk calls fn for every entry under the notes folder, with its slash-separated
+// path relative to the folder ("." for the folder itself). Entries that can't be read
+// are skipped.
+//
+// It walks os.DirFS(rootDir) rather than filepath.WalkDir(rootDir): WalkDir starts
+// with Lstat, so a notes folder that is itself a symlink or an NTFS junction would
+// look like a file and show no notes. DirFS starts with Stat, which follows both.
+// Links inside the folder are still not followed.
+func (s *Store) walk(fn func(rel string, d fs.DirEntry) error) error {
+	return fs.WalkDir(os.DirFS(s.rootDir), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if !d.IsDir() {
+		return fn(rel, d)
+	})
+}
+
+// ListFolders returns all directory paths containing notes or existing inside rootDir.
+func (s *Store) ListFolders() ([]string, error) {
+	folderSet := make(map[string]struct{})
+	err := s.walk(func(rel string, d fs.DirEntry) error {
+		if !d.IsDir() || rel == "." {
 			return nil
 		}
-		if path == s.rootDir {
-			return nil
+		if strings.HasPrefix(d.Name(), ".") {
+			return fs.SkipDir
 		}
-		name := d.Name()
-		if strings.HasPrefix(name, ".") {
-			return filepath.SkipDir
-		}
-		rel, err := filepath.Rel(s.rootDir, path)
-		if err == nil && rel != "." {
-			folderSet[filepath.ToSlash(rel)] = struct{}{}
-		}
+		folderSet[rel] = struct{}{}
 		return nil
 	})
 	if err != nil {
@@ -415,14 +422,11 @@ type diskEntry struct {
 func (s *Store) syncAndLoadAllMeta() ([]NoteMeta, error) {
 	var entries []diskEntry
 
-	err := filepath.WalkDir(s.rootDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
+	err := s.walk(func(rel string, d fs.DirEntry) error {
 		name := d.Name()
 		if d.IsDir() {
-			if path != s.rootDir && strings.HasPrefix(name, ".") {
-				return filepath.SkipDir
+			if rel != "." && strings.HasPrefix(name, ".") {
+				return fs.SkipDir
 			}
 			return nil
 		}
@@ -433,13 +437,9 @@ func (s *Store) syncAndLoadAllMeta() ([]NoteMeta, error) {
 		if err != nil {
 			return nil
 		}
-		rel, err := filepath.Rel(s.rootDir, path)
-		if err != nil {
-			return nil
-		}
 		entries = append(entries, diskEntry{
-			relPath: filepath.ToSlash(rel),
-			absPath: path,
+			relPath: rel,
+			absPath: filepath.Join(s.rootDir, filepath.FromSlash(rel)),
 			modTime: info.ModTime(),
 			size:    info.Size(),
 		})
