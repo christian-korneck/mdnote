@@ -58,6 +58,7 @@
   const findPrevBtn = document.getElementById("find-prev");
   const findNextBtn = document.getElementById("find-next");
   const findCloseBtn = document.getElementById("find-close");
+  const findRegexBtn = document.getElementById("find-regex");
 
   const uiDialog = document.getElementById("ui-dialog");
   const uiDialogMessage = document.getElementById("ui-dialog-message");
@@ -89,6 +90,8 @@
   let editorRanges = []; // [start, end) of each match in the editor text
   let editorMarks = []; // per match: its <mark> elements in the editor layer
   let previewMarks = []; // per match: its <mark> elements in the preview
+  let findRegexMode = false; // the .* toggle (not saved)
+  let findInvalid = false; // regex mode with a pattern that doesn't compile
 
   function saveSettings(patch) {
     api("/api/settings", {
@@ -1187,15 +1190,28 @@
     return activeFindPane() === "editor" ? editorMarks : previewMarks;
   }
 
-  // Plain text, case-insensitive. The text itself is not lowercased, so offsets stay right.
+  // Plain text, or a JavaScript regular expression with the .* toggle (^ and $ then
+  // match at line breaks). Case-insensitive either way. The text itself is not
+  // lowercased, so offsets stay right. A pattern that doesn't compile sets findInvalid.
   function findRegex() {
     const q = findInput.value;
-    return q ? new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu") : null;
+    findInvalid = false;
+    if (!q) return null;
+    if (!findRegexMode) return new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu");
+    try {
+      return new RegExp(q, "gim");
+    } catch {
+      findInvalid = true;
+      return null;
+    }
   }
 
+  // Empty matches (e.g. from ^ or a*) are left out: there's nothing to highlight.
   function matchRanges(re, text) {
     const ranges = [];
-    for (const m of text.matchAll(re)) ranges.push([m.index, m.index + m[0].length]);
+    for (const m of text.matchAll(re)) {
+      if (m[0].length) ranges.push([m.index, m.index + m[0].length]);
+    }
     return ranges;
   }
 
@@ -1306,8 +1322,11 @@
     findIndex = Math.max(0, Math.min(findIndex, marks.length - 1));
     for (const el of document.querySelectorAll("mark.find-current")) el.classList.remove("find-current");
     for (const el of marks[findIndex] || []) el.classList.add("find-current");
+    findInput.classList.toggle("invalid", findInvalid);
     if (!findInput.value) {
       findCount.textContent = "";
+    } else if (findInvalid) {
+      findCount.textContent = "Invalid regex";
     } else if (!marks.length) {
       findCount.textContent = "No results";
     } else {
@@ -1406,6 +1425,13 @@
     findInput.focus();
   });
   findCloseBtn.addEventListener("click", () => closeFind({ selectMatch: true }));
+  findRegexBtn.addEventListener("click", () => {
+    findRegexMode = !findRegexMode;
+    findRegexBtn.setAttribute("aria-pressed", String(findRegexMode));
+    findRegexBtn.title = `Regular expression: ${findRegexMode ? "on" : "off"}`;
+    updateFind({ restart: true, jump: true });
+    findInput.focus();
+  });
 
   // Split view: the pane clicked last is the one Next/Previous step through.
   function setFindPane(pane) {

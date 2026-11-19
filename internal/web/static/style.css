@@ -989,6 +989,21 @@ body.popout #popout-btn {
   color: var(--text);
 }
 
+.find-regex {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.find-btn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.find-input.invalid {
+  border-color: var(--danger);
+}
+
 /* No padding or border: in the editor layer the marks must not move the text. */
 mark.find-hit {
   background: var(--find-hit);
